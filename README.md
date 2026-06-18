@@ -13,7 +13,7 @@ Implemented:
 - Provider request and stream event types in `llm`
 - Tool execution contracts in `tool`
 - Low-level agent loop and lifecycle events in `agent`
-- OpenRouter streaming provider in `openrouter`
+- OpenRouter streaming provider in `providers/openrouter`
 - Fake-provider tests for streaming, tool calls, tool result ordering, and tool errors
 - Minimal example CLI in `examples/simple`
 
@@ -31,7 +31,7 @@ See [PLAN.md](PLAN.md) for the full implementation plan.
 - `agent`: low-level loop and lifecycle events
 - `llm`: provider-neutral messages, requests, and provider stream events
 - `tool`: tool metadata, calls, progress updates, and execution results
-- `openrouter`: OpenRouter chat-completions streaming provider
+- `providers/openrouter`: OpenRouter chat-completions streaming provider
 - `session`: placeholder for transcript storage and persistence
 
 ## Quick Start
@@ -54,7 +54,7 @@ Use OpenRouter by setting an API key:
 export OPENROUTER_API_KEY="..."
 ```
 
-The provider defaults to OpenRouter's `~openai/gpt-latest` model alias. Pass `openrouter.Config{Model: "provider/model"}` to use another OpenRouter model slug.
+The provider defaults to OpenRouter's `~openai/gpt-latest` model alias. Import `go-agent-core/providers/openrouter` and pass `openrouter.Config{Model: "provider/model"}` to use another OpenRouter model slug.
 
 ## Current Loop Shape
 

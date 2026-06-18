@@ -13,7 +13,7 @@ The implementation target is capability parity, not TypeScript API parity: state
 - Plan packages:
   - `agent`: stateful `Agent`, loop, lifecycle events, queues.
   - `llm`: provider-neutral messages, model requests, streaming interface.
-  - `openrouter`: OpenRouter chat-completions streaming provider.
+  - `providers/openrouter`: OpenRouter chat-completions streaming provider.
   - `tool`: tool definition, JSON schema metadata, execution results.
   - `session`: in-memory transcript first; JSONL persistence later.
 - Use OpenRouter only for v1:
