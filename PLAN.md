@@ -2,7 +2,7 @@
 
 ## Summary
 
-Build a standalone Go implementation that mimics the core capabilities of `@earendil-works/pi-agent-core`, using OpenAI as the only v1 provider.
+Build a standalone Go implementation that mimics the core capabilities of `@earendil-works/pi-agent-core`, using OpenRouter as the only v1 provider.
 
 The implementation target is capability parity, not TypeScript API parity: stateful agent runtime, streaming assistant messages, tool calls, event lifecycle, queues, cancellation, and tests.
 
@@ -13,12 +13,12 @@ The implementation target is capability parity, not TypeScript API parity: state
 - Plan packages:
   - `agent`: stateful `Agent`, loop, lifecycle events, queues.
   - `llm`: provider-neutral messages, model requests, streaming interface.
-  - `openai`: OpenAI Responses API streaming provider.
+  - `openrouter`: OpenRouter chat-completions streaming provider.
   - `tool`: tool definition, JSON schema metadata, execution results.
   - `session`: in-memory transcript first; JSONL persistence later.
-- Use OpenAI only for v1:
-  - API key from `OPENAI_API_KEY`.
-  - Streaming via OpenAI Responses API.
+- Use OpenRouter only for v1:
+  - API key from `OPENROUTER_API_KEY`.
+  - Streaming via OpenRouter chat completions API.
   - Tool calls normalized into internal `ToolCall` structs.
 - Keep v1 minimal:
   - No multi-provider registry.
@@ -97,8 +97,8 @@ AgentEnd
    - prevents concurrent prompts
    - supports `Steer` and `FollowUp` queues
    - uses `context.Context` cancellation for aborts.
-5. Implement OpenAI provider:
-   - read `OPENAI_API_KEY`
+5. Implement OpenRouter provider:
+   - read `OPENROUTER_API_KEY`
    - send current system prompt, messages, and tools
    - stream text deltas and tool calls
    - return provider errors as assistant error events where possible.
@@ -119,8 +119,8 @@ AgentEnd
   - abort cancels provider stream and tool execution
   - `Steer` injects after current turn
   - `FollowUp` runs after the agent would otherwise stop.
-- OpenAI integration smoke test:
-  - skipped unless `OPENAI_API_KEY` is set
+- OpenRouter integration smoke test:
+  - skipped unless `OPENROUTER_API_KEY` is set
   - prompt returns streamed text
   - tool call round trip works with one simple calculator tool.
 - Example CLI smoke:
@@ -130,6 +130,6 @@ AgentEnd
 ## Assumptions
 
 - The selected file path is `/Users/nishanthgowda/Developer/go-agent-core/PLAN.md`.
-- v1 uses OpenAI only.
+- v1 uses OpenRouter only.
 - The goal is to mimic agent-core capabilities in idiomatic Go, not preserve npm imports or TypeScript declaration-merging behavior.
 - Persistence, compaction, skills, and multi-provider support are explicitly post-v1.

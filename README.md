@@ -13,16 +13,16 @@ Implemented:
 - Provider request and stream event types in `llm`
 - Tool execution contracts in `tool`
 - Low-level agent loop and lifecycle events in `agent`
+- OpenRouter streaming provider in `openrouter`
 - Fake-provider tests for streaming, tool calls, tool result ordering, and tool errors
 - Minimal example CLI in `examples/simple`
 
 Not implemented yet:
 
 - Stateful `Agent` wrapper
-- OpenAI Responses API provider
 - Parallel tool execution
 - Session persistence
-- OpenAI integration smoke tests
+- OpenRouter integration smoke tests
 
 See [PLAN.md](PLAN.md) for the full implementation plan.
 
@@ -31,7 +31,7 @@ See [PLAN.md](PLAN.md) for the full implementation plan.
 - `agent`: low-level loop and lifecycle events
 - `llm`: provider-neutral messages, requests, and provider stream events
 - `tool`: tool metadata, calls, progress updates, and execution results
-- `openai`: placeholder for the OpenAI provider
+- `openrouter`: OpenRouter chat-completions streaming provider
 - `session`: placeholder for transcript storage and persistence
 
 ## Quick Start
@@ -47,6 +47,14 @@ Run tests:
 ```sh
 go test ./...
 ```
+
+Use OpenRouter by setting an API key:
+
+```sh
+export OPENROUTER_API_KEY="..."
+```
+
+The provider defaults to OpenRouter's `~openai/gpt-latest` model alias. Pass `openrouter.Config{Model: "provider/model"}` to use another OpenRouter model slug.
 
 ## Current Loop Shape
 
