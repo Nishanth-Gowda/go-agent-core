@@ -54,7 +54,7 @@ Use OpenRouter by setting an API key:
 export OPENROUTER_API_KEY="..."
 ```
 
-The provider defaults to OpenRouter's `~openai/gpt-latest` model alias. Import `go-agent-core/providers/openrouter` and pass `openrouter.Config{Model: "provider/model"}` to use another OpenRouter model slug.
+The provider defaults to OpenRouter's `deepseek/deepseek-v4-flash` model. Import `go-agent-core/providers/openrouter` and pass `openrouter.Config{Model: "provider/model"}` to use another OpenRouter model slug.
 
 ## Current Loop Shape
 

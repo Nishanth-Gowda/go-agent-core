@@ -11,6 +11,16 @@ import (
 	"go-agent-core/llm"
 )
 
+func TestNewDefaultsToDeepSeekV4Flash(t *testing.T) {
+	provider, err := New(Config{APIKey: "test-key"})
+	if err != nil {
+		t.Fatalf("New returned error: %v", err)
+	}
+	if provider.model != "deepseek/deepseek-v4-flash" {
+		t.Fatalf("model = %q, want deepseek/deepseek-v4-flash", provider.model)
+	}
+}
+
 func TestStreamEncodesChatCompletionRequest(t *testing.T) {
 	var got chatRequest
 	var auth string

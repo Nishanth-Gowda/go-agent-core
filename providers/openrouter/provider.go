@@ -17,7 +17,7 @@ import (
 
 const (
 	defaultBaseURL = "https://openrouter.ai/api/v1"
-	defaultModel   = "~openai/gpt-latest"
+	defaultModel   = "deepseek/deepseek-v4-flash"
 )
 
 // Config configures an OpenRouter provider.
