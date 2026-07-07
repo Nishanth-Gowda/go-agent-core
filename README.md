@@ -19,7 +19,6 @@ Implemented:
 
 Not implemented yet:
 
-- Stateful `Agent` wrapper
 - Parallel tool execution
 - Session persistence
 - OpenRouter integration smoke tests
@@ -69,3 +68,21 @@ messages, err := agent.RunLoop(ctx, transcript, "hello", agent.LoopOptions{
 ```
 
 `RunLoop` appends the user prompt, streams assistant events from the provider, finalizes an assistant message, executes requested tools, appends tool result messages, and repeats until there are no tool calls.
+
+For persistent conversations, use the stateful wrapper:
+
+```go
+runtime := agent.NewAgent(agent.AgentOptions{
+    Provider: provider,
+    Tools:    tools,
+})
+
+unsubscribe := runtime.Subscribe(handleEvent)
+defer unsubscribe()
+
+if err := runtime.Prompt(ctx, "hello"); err != nil {
+    // Handle provider, cancellation, or loop errors.
+}
+```
+
+`Agent` serializes prompts, owns the transcript, exposes copied state snapshots, and supports `Abort`, `Wait`, `Steer`, and `FollowUp` for active conversations.
