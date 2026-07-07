@@ -21,18 +21,27 @@ type LoopOptions struct {
 	OnEvent      EventHandler
 }
 
+type loopHooks struct {
+	onMessage   func(llm.Message)
+	getSteering func() (llm.Message, bool)
+	getFollowUp func() (llm.Message, bool)
+}
+
 // RunLoop appends a user prompt, runs model/tool turns, and returns the updated transcript.
 func RunLoop(ctx context.Context, transcript []llm.Message, prompt string, opts LoopOptions) (messages []llm.Message, err error) {
-	if opts.Provider == nil {
-		return nil, errors.New("agent: provider is required")
+	return runLoop(ctx, transcript, []llm.Message{llm.UserMessage{
+		Content: []llm.ContentBlock{llm.TextBlock{Text: prompt}},
+	}}, opts, loopHooks{})
+}
+
+func runLoop(ctx context.Context, transcript []llm.Message, initial []llm.Message, opts LoopOptions, hooks loopHooks) (messages []llm.Message, err error) {
+	if err := validateLoopOptions(opts); err != nil {
+		return nil, err
 	}
 
 	maxTurns := opts.MaxTurns
 	if maxTurns == 0 {
 		maxTurns = defaultMaxTurns
-	}
-	if maxTurns < 0 {
-		return nil, errors.New("agent: max turns must be non-negative")
 	}
 
 	emit := func(event Event) {
@@ -42,9 +51,15 @@ func RunLoop(ctx context.Context, transcript []llm.Message, prompt string, opts 
 	}
 
 	messages = append([]llm.Message(nil), transcript...)
-	messages = append(messages, llm.UserMessage{
-		Content: []llm.ContentBlock{llm.TextBlock{Text: prompt}},
-	})
+	appendMessage := func(message llm.Message) {
+		messages = append(messages, message)
+		if hooks.onMessage != nil {
+			hooks.onMessage(message)
+		}
+	}
+	for _, message := range initial {
+		appendMessage(message)
+	}
 
 	emit(Event{Kind: EventAgentStart})
 	defer func() {
@@ -57,6 +72,10 @@ func RunLoop(ctx context.Context, transcript []llm.Message, prompt string, opts 
 	}
 
 	for turn := 0; turn < maxTurns; turn++ {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return messages, ctxErr
+		}
+
 		emit(Event{Kind: EventTurnStart, Turn: turn})
 
 		assistant, calls, streamErr := streamAssistant(ctx, opts.Provider, llm.Request{
@@ -68,23 +87,55 @@ func RunLoop(ctx context.Context, transcript []llm.Message, prompt string, opts 
 			return messages, streamErr
 		}
 
-		messages = append(messages, assistant)
+		appendMessage(assistant)
 		emit(Event{Kind: EventMessageEnd, Turn: turn, Message: assistant})
 
-		if len(calls) == 0 {
-			emit(Event{Kind: EventTurnEnd, Turn: turn})
-			return messages, nil
-		}
-
 		for _, call := range calls {
+			if ctx.Err() != nil {
+				break
+			}
 			result := executeTool(ctx, toolsByName, call, turn, emit)
-			messages = append(messages, result)
+			appendMessage(result)
+			emit(Event{Kind: EventToolEnd, Turn: turn, ToolCall: call, ToolResult: result})
 		}
 
 		emit(Event{Kind: EventTurnEnd, Turn: turn})
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return messages, ctxErr
+		}
+
+		if hooks.getSteering != nil {
+			if message, ok := hooks.getSteering(); ok {
+				appendMessage(message)
+				continue
+			}
+		}
+
+		if len(calls) > 0 {
+			continue
+		}
+
+		if hooks.getFollowUp != nil {
+			if message, ok := hooks.getFollowUp(); ok {
+				appendMessage(message)
+				continue
+			}
+		}
+
+		return messages, nil
 	}
 
 	return messages, fmt.Errorf("agent: exceeded max turns (%d)", maxTurns)
+}
+
+func validateLoopOptions(opts LoopOptions) error {
+	if opts.Provider == nil {
+		return errors.New("agent: provider is required")
+	}
+	if opts.MaxTurns < 0 {
+		return errors.New("agent: max turns must be non-negative")
+	}
+	return nil
 }
 
 func streamAssistant(ctx context.Context, provider llm.Provider, req llm.Request, turn int, emit func(Event)) (llm.AssistantMessage, []tool.Call, error) {
@@ -113,6 +164,9 @@ func streamAssistant(ctx context.Context, provider llm.Provider, req llm.Request
 			return llm.AssistantMessage{}, nil, ctx.Err()
 		case event, ok := <-stream:
 			if !ok {
+				if ctxErr := ctx.Err(); ctxErr != nil {
+					return llm.AssistantMessage{}, nil, ctxErr
+				}
 				flushText()
 				return llm.AssistantMessage{Content: content}, calls, nil
 			}
@@ -161,7 +215,6 @@ func executeTool(ctx context.Context, toolsByName map[string]tool.Tool, call too
 	if !ok {
 		result.IsError = true
 		result.Content = []llm.ContentBlock{llm.TextBlock{Text: fmt.Sprintf("tool %q not found", call.Name)}}
-		emit(Event{Kind: EventToolEnd, Turn: turn, ToolCall: call, ToolResult: result})
 		return result
 	}
 
@@ -171,7 +224,6 @@ func executeTool(ctx context.Context, toolsByName map[string]tool.Tool, call too
 	if err != nil {
 		result.IsError = true
 		result.Content = []llm.ContentBlock{llm.TextBlock{Text: err.Error()}}
-		emit(Event{Kind: EventToolEnd, Turn: turn, ToolCall: call, ToolResult: result})
 		return result
 	}
 
@@ -184,6 +236,5 @@ func executeTool(ctx context.Context, toolsByName map[string]tool.Tool, call too
 		result.ToolName = toolResult.Name
 	}
 
-	emit(Event{Kind: EventToolEnd, Turn: turn, ToolCall: call, ToolResult: result})
 	return result
 }
