@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 
 	"go-agent-core/llm"
 	"go-agent-core/tool"
@@ -44,8 +45,11 @@ func runLoop(ctx context.Context, transcript []llm.Message, initial []llm.Messag
 		maxTurns = defaultMaxTurns
 	}
 
+	var emitMu sync.Mutex
 	emit := func(event Event) {
 		if opts.OnEvent != nil {
+			emitMu.Lock()
+			defer emitMu.Unlock()
 			opts.OnEvent(event)
 		}
 	}
@@ -90,11 +94,9 @@ func runLoop(ctx context.Context, transcript []llm.Message, initial []llm.Messag
 		appendMessage(assistant)
 		emit(Event{Kind: EventMessageEnd, Turn: turn, Message: assistant})
 
-		for _, call := range calls {
-			if ctx.Err() != nil {
-				break
-			}
-			result := executeTool(ctx, toolsByName, call, turn, emit)
+		results := executeTools(ctx, toolsByName, calls, turn, emit)
+		for i, result := range results {
+			call := calls[i]
 			appendMessage(result)
 			emit(Event{Kind: EventToolEnd, Turn: turn, ToolCall: call, ToolResult: result})
 		}
@@ -201,6 +203,21 @@ func streamAssistant(ctx context.Context, provider llm.Provider, req llm.Request
 			}
 		}
 	}
+}
+
+func executeTools(ctx context.Context, toolsByName map[string]tool.Tool, calls []tool.Call, turn int, emit func(Event)) []llm.ToolResultMessage {
+	results := make([]llm.ToolResultMessage, len(calls))
+	var wg sync.WaitGroup
+	wg.Add(len(calls))
+	for i, call := range calls {
+		i, call := i, call
+		go func() {
+			defer wg.Done()
+			results[i] = executeTool(ctx, toolsByName, call, turn, emit)
+		}()
+	}
+	wg.Wait()
+	return results
 }
 
 func executeTool(ctx context.Context, toolsByName map[string]tool.Tool, call tool.Call, turn int, emit func(Event)) llm.ToolResultMessage {

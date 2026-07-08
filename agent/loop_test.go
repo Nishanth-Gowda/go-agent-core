@@ -6,6 +6,7 @@ import (
 	"errors"
 	"reflect"
 	"testing"
+	"time"
 
 	"go-agent-core/llm"
 	"go-agent-core/tool"
@@ -122,6 +123,58 @@ func TestRunLoopPreservesMultipleToolResultOrder(t *testing.T) {
 
 	assertToolResult(t, messages[2], "call_b", "second", false, "second result")
 	assertToolResult(t, messages[3], "call_a", "first", false, "first result")
+	assertToolResult(t, provider.requests[1].Messages[2], "call_b", "second", false, "second result")
+	assertToolResult(t, provider.requests[1].Messages[3], "call_a", "first", false, "first result")
+}
+
+func TestRunLoopExecutesMultipleToolsInParallelAndPreservesOrder(t *testing.T) {
+	provider := &fakeProvider{
+		responses: [][]llm.ProviderEvent{
+			{
+				llm.ToolCallEvent{ID: "call_1", Name: "first"},
+				llm.ToolCallEvent{ID: "call_2", Name: "second"},
+			},
+			{
+				llm.TextDeltaEvent{Delta: "done"},
+			},
+		},
+	}
+	secondFinished := make(chan struct{})
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	messages, err := RunLoop(ctx, nil, "run tools", LoopOptions{
+		Provider: provider,
+		Tools: []tool.Tool{
+			funcTool{
+				name: "first",
+				execute: func(ctx context.Context, call tool.Call, update tool.UpdateFunc) (tool.Result, error) {
+					select {
+					case <-secondFinished:
+					case <-ctx.Done():
+						return tool.Result{}, ctx.Err()
+					}
+					return toolResult(call, "first result"), nil
+				},
+			},
+			funcTool{
+				name: "second",
+				execute: func(ctx context.Context, call tool.Call, update tool.UpdateFunc) (tool.Result, error) {
+					close(secondFinished)
+					return toolResult(call, "second result"), nil
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("RunLoop returned error: %v", err)
+	}
+
+	assertToolResult(t, messages[2], "call_1", "first", false, "first result")
+	assertToolResult(t, messages[3], "call_2", "second", false, "second result")
+	assertToolResult(t, provider.requests[1].Messages[2], "call_1", "first", false, "first result")
+	assertToolResult(t, provider.requests[1].Messages[3], "call_2", "second", false, "second result")
 }
 
 func TestRunLoopConvertsToolErrorToToolResult(t *testing.T) {
@@ -148,6 +201,52 @@ func TestRunLoopConvertsToolErrorToToolResult(t *testing.T) {
 
 	assertToolResult(t, messages[2], "call_1", "broken", true, "boom")
 	assertToolResult(t, provider.requests[1].Messages[2], "call_1", "broken", true, "boom")
+}
+
+func TestRunLoopCancellationReachesParallelTools(t *testing.T) {
+	provider := &fakeProvider{responses: [][]llm.ProviderEvent{{
+		llm.ToolCallEvent{ID: "call_1", Name: "first"},
+		llm.ToolCallEvent{ID: "call_2", Name: "second"},
+	}}}
+	firstStarted := make(chan struct{})
+	secondStarted := make(chan struct{})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan struct {
+		messages []llm.Message
+		err      error
+	}, 1)
+	go func() {
+		messages, err := RunLoop(ctx, nil, "run tools", LoopOptions{
+			Provider: provider,
+			Tools: []tool.Tool{
+				cancelableTool{name: "first", started: firstStarted},
+				cancelableTool{name: "second", started: secondStarted},
+			},
+		})
+		result <- struct {
+			messages []llm.Message
+			err      error
+		}{messages: messages, err: err}
+	}()
+
+	waitForSignal(t, firstStarted)
+	waitForSignal(t, secondStarted)
+	cancel()
+
+	select {
+	case got := <-result:
+		if !errors.Is(got.err, context.Canceled) {
+			t.Fatalf("RunLoop error = %v, want context.Canceled", got.err)
+		}
+		if len(got.messages) != 4 {
+			t.Fatalf("message count = %d, want user, assistant, and two canceled tool results", len(got.messages))
+		}
+		assertToolResult(t, got.messages[2], "call_1", "first", true, context.Canceled.Error())
+		assertToolResult(t, got.messages[3], "call_2", "second", true, context.Canceled.Error())
+	case <-time.After(2 * time.Second):
+		t.Fatal("timed out waiting for RunLoop cancellation")
+	}
 }
 
 type fakeProvider struct {
@@ -194,11 +293,59 @@ func (t fakeTool) Execute(ctx context.Context, call tool.Call, update tool.Updat
 	if t.err != nil {
 		return tool.Result{}, t.err
 	}
+	return tool.Result{CallID: call.ID, Name: call.Name, Content: t.content}, nil
+}
+
+type funcTool struct {
+	name    string
+	execute func(context.Context, tool.Call, tool.UpdateFunc) (tool.Result, error)
+}
+
+func (t funcTool) Name() string {
+	return t.name
+}
+
+func (t funcTool) Description() string {
+	return "function tool"
+}
+
+func (t funcTool) Schema() map[string]any {
+	return nil
+}
+
+func (t funcTool) Execute(ctx context.Context, call tool.Call, update tool.UpdateFunc) (tool.Result, error) {
+	return t.execute(ctx, call, update)
+}
+
+type cancelableTool struct {
+	name    string
+	started chan struct{}
+}
+
+func (t cancelableTool) Name() string {
+	return t.name
+}
+
+func (t cancelableTool) Description() string {
+	return "cancelable tool"
+}
+
+func (t cancelableTool) Schema() map[string]any {
+	return nil
+}
+
+func (t cancelableTool) Execute(ctx context.Context, call tool.Call, update tool.UpdateFunc) (tool.Result, error) {
+	close(t.started)
+	<-ctx.Done()
+	return tool.Result{}, ctx.Err()
+}
+
+func toolResult(call tool.Call, text string) tool.Result {
 	return tool.Result{
 		CallID:  call.ID,
 		Name:    call.Name,
-		Content: t.content,
-	}, nil
+		Content: []llm.ContentBlock{llm.TextBlock{Text: text}},
+	}
 }
 
 func assertTextMessage(t *testing.T, message llm.Message, role llm.Role, text string) {
