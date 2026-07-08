@@ -14,13 +14,13 @@ Implemented:
 - Tool execution contracts in `tool`
 - Low-level agent loop and lifecycle events in `agent`
 - OpenRouter streaming provider in `providers/openrouter`
+- Parallel tool execution
 - Fake-provider tests for streaming, tool calls, tool result ordering, and tool errors
+- JSONL session persistence
 - Minimal example CLI in `examples/simple`
 
 Not implemented yet:
 
-- Parallel tool execution
-- Session persistence
 - OpenRouter integration smoke tests
 
 See [PLAN.md](PLAN.md) for the full implementation plan.
@@ -31,7 +31,7 @@ See [PLAN.md](PLAN.md) for the full implementation plan.
 - `llm`: provider-neutral messages, requests, and provider stream events
 - `tool`: tool metadata, calls, progress updates, and execution results
 - `providers/openrouter`: OpenRouter chat-completions streaming provider
-- `session`: placeholder for transcript storage and persistence
+- `session`: JSONL transcript persistence
 
 ## Quick Start
 
